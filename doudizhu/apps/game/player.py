@@ -18,25 +18,24 @@ class Player(object):
         self.uid = uid
         self.name = name
         self.socket = socket
-        self.room = None
-        self.table: Table = []
+        self.table: Table = None
         self.ready = False
         self.seat = 0
         self.is_called = False
         self.role = FARMER
         self.hand_pokers: List[int] = []
 
-    def reset(self):
+    async def reset(self):
         self.ready = False
         self.is_called = False
         self.role = FARMER
         self.hand_pokers: List[int] = []
-        self.send([Pt.RSP_RESTART])
+        await self.send([Pt.RSP_RESTART])
 
-    def send(self, packet):
-        self.socket.write_message(packet)
+    async def send(self, packet):
+        await self.socket.write_message(packet)
 
-    def handle_call_score(self, score):
+    async def handle_call_score(self, score):
         if 0 < score < self.table.call_score:
             logger.warning('Player[%d] CALL SCORE[%d] CHEAT', self.uid, score)
             return
@@ -59,12 +58,12 @@ class Player(object):
             self.table.max_call_score_turn = self.seat
         response = [Pt.RSP_CALL_SCORE, self.uid, score, call_end]
         for p in self.table.players:
-            p.send(response)
+            await p.send(response)
 
         if call_end:
-            self.table.call_score_end()
+            await self.table.call_score_end()
 
-    def handle_shot_poker(self, pokers):
+    async def handle_shot_poker(self, pokers):
         if pokers:
             if not rule.is_contains(self.hand_pokers, pokers):
                 logger.warning('Player[%d] play non-exist poker', self.uid)
@@ -85,26 +84,23 @@ class Player(object):
 
         response = [Pt.RSP_SHOT_POKER, self.uid, pokers]
         for p in self.table.players:
-            p.send(response)
+            await p.send(response)
         logger.info('Player[%d] shot[%s]', self.uid, str(pokers))
 
         if not self.hand_pokers:
-            self.table.on_game_over(self)
+            await self.table.on_game_over(self)
             return
 
-    def join_table(self, t):
+    async def join_table(self, t):
         self.ready = True
         self.table = t
         t.on_join(self)
 
-    def leave_table(self):
+    async def leave_table(self):
         self.ready = False
         if self.table:
-            self.table.on_leave(self)
+            await self.table.on_leave(self)
         # self.table = None
 
-    def __repr(self):
-        return self.__str__()
-
     def __str__(self):
-        return self.uid + '-' + self.name
+        return f'{self.uid}-{self.name}'

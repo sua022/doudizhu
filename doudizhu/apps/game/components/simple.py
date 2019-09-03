@@ -13,7 +13,6 @@ class AiPlayer(Player):
     def __init__(self, uid: int, username: str, player: Player):
         from ..views import LoopBackSocketHandler
         super().__init__(uid, username, LoopBackSocketHandler(self))
-        self.room = player.room
 
     def to_server(self, message):
         packet = json.dumps(message)

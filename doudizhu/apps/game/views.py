@@ -1,6 +1,7 @@
 import functools
 import json
 import logging
+from typing import List
 
 from tornado.escape import json_decode
 from tornado.ioloop import IOLoop
@@ -10,7 +11,7 @@ from tornado.websocket import WebSocketHandler, WebSocketClosedError
 from contrib.db import AsyncConnection
 from .player import Player
 from .protocol import Protocol as Pt
-from .room import RoomManager
+from .table_mgr import table_manager
 
 
 def shot_turn(method):
@@ -32,7 +33,7 @@ class SocketHandler(WebSocketHandler):
         self.player: Player = None
 
     def data_received(self, chunk):
-        logging.info('socket data_received')
+        logging.info('data_received')
 
     def get_current_user(self):
         return json_decode(self.get_secure_cookie("user"))
@@ -40,10 +41,6 @@ class SocketHandler(WebSocketHandler):
     @property
     def uid(self):
         return self.player.uid
-
-    @property
-    def room(self):
-        return self.player.room
 
     @authenticated
     def open(self):
@@ -62,38 +59,30 @@ class SocketHandler(WebSocketHandler):
         code = packet[0]
         if code == Pt.REQ_LOGIN:
             response = [Pt.RSP_LOGIN, self.player.uid, self.player.name]
-            self.write_message(response)
-
-        elif code == Pt.REQ_ROOM_LIST:
-            self.write_message([Pt.RSP_ROOM_LIST])
+            await self.write_message(response)
 
         elif code == Pt.REQ_TABLE_LIST:
-            self.write_message([Pt.RSP_TABLE_LIST, self.room.rsp_tables()])
-
-        elif code == Pt.REQ_JOIN_ROOM:
-            self.player.room = RoomManager.find_room(packet[1])
-            self.write_message([Pt.RSP_JOIN_ROOM, self.room.rsp_tables()])
+            await self.write_message([Pt.RSP_TABLE_LIST, table_manager.rsp_tables()])
 
         elif code == Pt.REQ_NEW_TABLE:
             # TODO: check player was already in table.
-            table = self.room.new_table()
-            self.player.join_table(table)
+            table = table_manager.new_table()
+            await self.player.join_table(table)
             logging.info('PLAYER[%s] NEW TABLE[%d]', self.uid, table.uid)
-            self.write_message([Pt.RSP_NEW_TABLE, table.uid])
+            await self.write_message([Pt.RSP_NEW_TABLE, table.uid])
 
         elif code == Pt.REQ_JOIN_TABLE:
-            table = self.room.find_waiting_table(packet[1])
-            if not table:
-                self.write_message([Pt.RSP_TABLE_LIST, self.room.rsp_tables()])
+            table = table_manager.find_waiting_table(packet[1])
+            if table:
+                await self.player.join_table(table)
+                logging.info('PLAYER[%s] JOIN TABLE[%d]', self.uid, table.uid)
+                if table.is_full():
+                    await table.deal_poker()
+                    table_manager.on_table_changed(table)
+                    logging.info('TABLE[%s] GAME BEGIN[%s]', table.uid, table.players)
+            else:
+                await self.write_message([Pt.RSP_TABLE_LIST, table_manager.rsp_tables()])
                 logging.info('PLAYER[%d] JOIN TABLE[%d] NOT FOUND', self.uid, packet[1])
-                return
-
-            self.player.join_table(table)
-            logging.info('PLAYER[%s] JOIN TABLE[%d]', self.uid, table.uid)
-            if table.is_full():
-                table.deal_poker()
-                self.room.on_table_changed(table)
-                logging.info('TABLE[%s] GAME BEGIN[%s]', table.uid, table.players)
 
         elif code == Pt.REQ_CALL_SCORE:
             self.handle_call_score(packet)
@@ -133,13 +122,14 @@ class SocketHandler(WebSocketHandler):
             if p.uid == uid:
                 self.player.send([Pt.RSP_CHEAT, p.uid, p.hand_pokers])
 
-    def write_message(self, message, binary=False):
+    async def write_message(self, message: List[int], binary=False):
         if self.ws_connection is None:
             raise WebSocketClosedError()
         logging.info('RSP[%d]: %s', self.uid, message)
         packet = json.dumps(message)
         return self.ws_connection.write_message(packet, binary=binary)
 
+    @classmethod
     def send_updates(cls, chat):
         logging.info('sending message to %d waiters', len(cls.waiters))
         for waiter in cls.waiters:
@@ -148,7 +138,8 @@ class SocketHandler(WebSocketHandler):
 
 class LoopBackSocketHandler(SocketHandler):
 
-    def __init__(self, player):
+    def __init__(self, player, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.player = player
 
     def write_message(self, message, binary=True):

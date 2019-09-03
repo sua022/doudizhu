@@ -1,5 +1,5 @@
 import os
-os.environ.setdefault('TORNADO_SETTINGS_MODULE', 'settings.test')
+os.environ.setdefault('TORNADO_SETTINGS_MODULE', 'config.test')
 
 import pytest
 

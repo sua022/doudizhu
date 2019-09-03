@@ -4,15 +4,16 @@ from contrib.singleton import Singleton
 from .table import Table
 
 
-class Room(object):
+class _TableManager(object):
+    __metaclass__ = Singleton
 
-    def __init__(self, uid, allow_robot=True):
-        self.uid = uid
+    __current_table_id = 0
+
+    def __init__(self, allow_robot=True):
         self.__waiting_tables = {}
         self.__playing_tables = {}
         self.allow_robot = allow_robot
-        self.entrance_fee = 100
-        logging.info('ROOM[%d] CREATED', uid)
+        logging.info('TABLE MGR INIT')
 
     def rsp_tables(self):
         rsp = []
@@ -21,11 +22,11 @@ class Room(object):
         return rsp
 
     def new_table(self):
-        t = Table(RoomManager.gen_table_id(), self)
+        t = Table(self.gen_table_id(), self.allow_robot)
         self.waiting_tables[t.uid] = t
         return t
 
-    def find_waiting_table(self, uid):
+    def find_waiting_table(self, uid) -> Table:
         if uid == -1:
             for _, table in self.waiting_tables.items():
                 return table
@@ -48,26 +49,10 @@ class Room(object):
     def playing_tables(self):
         return self.__playing_tables
 
+    @classmethod
+    def gen_table_id(cls):
+        cls.__current_table_id += 1
+        return cls.__current_table_id
 
-class RoomManager(object):
-    __metaclass__ = Singleton
 
-    __room_dict = {
-        1: Room(1, True),
-        2: Room(2, False),
-    }
-
-    __current_table_id = 0
-
-    @staticmethod
-    def gen_table_id():
-        RoomManager.__current_table_id += 1
-        return RoomManager.__current_table_id
-
-    @staticmethod
-    def find_room(uid, created=False):
-        room = RoomManager.__room_dict.get(uid)
-        if not room and created:
-            room = Room(uid)
-            RoomManager.__room_dict[uid] = room
-        return room
+table_manager = _TableManager()

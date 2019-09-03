@@ -9,14 +9,8 @@ class Protocol(IntEnum):
     REQ_LOGIN = 11
     RSP_LOGIN = 12
 
-    REQ_ROOM_LIST = 13
-    RSP_ROOM_LIST = 14
-
     REQ_TABLE_LIST = 15
     RSP_TABLE_LIST = 16
-
-    REQ_JOIN_ROOM = 17
-    RSP_JOIN_ROOM = 18
 
     REQ_JOIN_TABLE = 19
     RSP_JOIN_TABLE = 20
